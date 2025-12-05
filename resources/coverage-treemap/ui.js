@@ -9,6 +9,8 @@ let resizeHandler = null;
 let maxDepth = 0;
 let currentDepth = 0;
 let isSliderChanging = false; // Flag to prevent navigation during slider changes
+let maxAspectRatio = null; // null means no limit, otherwise it's the max aspect ratio allowed
+let isUpdatingAspectRatioFromHash = false; // Flag to prevent event loop during hash navigation
 
 function debounce(fn, delay = 150) {
     let timeout;
@@ -100,21 +102,24 @@ function findNamespaceForFile(fileName) {
 }
 
 /**
- * Parse hash into namespace, file, and depth components.
- * Format: #namespace or #namespace/file.php or #namespace?depth=2 or #namespace/file.php?depth=2
+ * Parse hash into namespace, file, depth, and aspectRatio components.
+ * Format: #namespace or #namespace/file.php or #namespace?depth=2&aspectRatio=50 or #namespace/file.php?depth=2&aspectRatio=50
  * The hash is already decoded, so we just split on '/' and '?'
  */
 function parseHash(hash) {
     const decoded = decodeHash(hash);
-    if (!decoded) return { namespace: null, file: null, depth: null };
+    if (!decoded) return { namespace: null, file: null, depth: null, aspectRatio: null };
     
     // Split on '?' to separate path from query parameters
     const [pathPart, queryPart] = decoded.split('?');
     let depth = null;
+    let aspectRatio = null;
     
-    // Parse depth from query string
+    // Parse query parameters
     if (queryPart) {
         const params = new URLSearchParams(queryPart);
+        
+        // Parse depth from query string
         const depthParam = params.get('depth');
         if (depthParam !== null) {
             const parsedDepth = parseInt(depthParam, 10);
@@ -122,17 +127,26 @@ function parseHash(hash) {
                 depth = parsedDepth;
             }
         }
+        
+        // Parse aspectRatio from query string
+        const aspectRatioParam = params.get('aspectRatio');
+        if (aspectRatioParam !== null) {
+            const parsedAspectRatio = parseInt(aspectRatioParam, 10);
+            if (!isNaN(parsedAspectRatio) && parsedAspectRatio >= 1 && parsedAspectRatio <= 100) {
+                aspectRatio = parsedAspectRatio;
+            }
+        }
     }
     
     const parts = pathPart.split('/');
     if (parts.length === 1) {
-        return { namespace: parts[0] || null, file: null, depth };
+        return { namespace: parts[0] || null, file: null, depth, aspectRatio };
     } else if (parts.length >= 2) {
         // First part is always the top-level namespace
         // Everything after is either a nested namespace path or namespace/file
-        return { namespace: parts[0], file: parts.slice(1).join('/'), depth };
+        return { namespace: parts[0], file: parts.slice(1).join('/'), depth, aspectRatio };
     }
-    return { namespace: null, file: null, depth };
+    return { namespace: null, file: null, depth, aspectRatio };
 }
 
 /**
@@ -140,8 +154,9 @@ function parseHash(hash) {
  * @param {string|null} namespace - The namespace path
  * @param {string|null} file - The file name
  * @param {number|null} depth - The depth level (optional, uses currentDepth if not provided)
+ * @param {number|null} aspectRatio - The aspect ratio slider position (optional, uses current slider value if not provided)
  */
-function updateHash(namespace, file, depth = null) {
+function updateHash(namespace, file, depth = null, aspectRatio = null) {
     let hash = '';
     if (namespace) {
         if (file) {
@@ -153,10 +168,24 @@ function updateHash(namespace, file, depth = null) {
         }
     }
     
+    // Build query parameters
+    const params = [];
+    
     // Add depth to hash if it's set (use provided depth or currentDepth)
     const depthToUse = depth !== null ? depth : (currentDepth > 0 ? currentDepth : null);
     if (depthToUse !== null && depthToUse > 0) {
-        hash += `?depth=${depthToUse}`;
+        params.push(`depth=${depthToUse}`);
+    }
+    
+    // Add aspectRatio to hash if it's set (use provided aspectRatio or current slider value)
+    const aspectRatioToUse = aspectRatio !== null ? aspectRatio : getAspectRatioSliderValue();
+    if (aspectRatioToUse !== null && aspectRatioToUse < 100) {
+        params.push(`aspectRatio=${aspectRatioToUse}`);
+    }
+    
+    // Add query string if we have any parameters
+    if (params.length > 0) {
+        hash += `?${params.join('&')}`;
     }
     
     // Only update if hash actually changed to avoid unnecessary history entries
@@ -166,6 +195,19 @@ function updateHash(namespace, file, depth = null) {
         // We want hashchange to fire for proper navigation
         history.replaceState(null, '', newHash);
     }
+}
+
+/**
+ * Get the current aspect ratio slider value (1-100).
+ * @returns {number|null} Slider position or null if slider doesn't exist
+ */
+function getAspectRatioSliderValue() {
+    const aspectRatioSlider = document.getElementById('aspect-ratio-slider');
+    if (aspectRatioSlider) {
+        const value = parseInt(aspectRatioSlider.value, 10);
+        return isNaN(value) ? null : value;
+    }
+    return null;
 }
 
 /**
@@ -181,11 +223,12 @@ function navigateFromHash() {
     let file;
     let depth = null;
     
-    // Parse hash to get namespace, file, and depth
+    // Parse hash to get namespace, file, depth, and aspectRatio
     const parsed = parseHash(hash);
     namespace = parsed.namespace;
     file = parsed.file;
     depth = parsed.depth;
+    const aspectRatio = parsed.aspectRatio;
     
     // Set depth: use depth from hash if specified, otherwise reset to 0
     // (This ensures navigation to new locations starts at default depth)
@@ -193,6 +236,41 @@ function navigateFromHash() {
         currentDepth = depth;
     } else {
         currentDepth = 0;
+    }
+    
+    // Set aspect ratio: use aspectRatio from hash if specified, otherwise use default (100 = no limit)
+    isUpdatingAspectRatioFromHash = true; // Prevent event loop
+    try {
+        if (aspectRatio !== null) {
+            // Update the slider and maxAspectRatio
+            const aspectRatioSlider = document.getElementById('aspect-ratio-slider');
+            const aspectRatioValue = document.getElementById('aspect-ratio-value');
+            if (aspectRatioSlider && aspectRatioValue) {
+                aspectRatioSlider.value = aspectRatio;
+                
+                if (aspectRatio >= 100) {
+                    maxAspectRatio = null;
+                    aspectRatioValue.textContent = 'No Limit';
+                } else {
+                    const aspectRatioValue_log = sliderToAspectRatio(aspectRatio);
+                    maxAspectRatio = aspectRatioValue_log;
+                    aspectRatioValue.textContent = aspectRatioValue_log >= 10 ? 
+                        Math.round(aspectRatioValue_log).toString() : 
+                        aspectRatioValue_log.toFixed(1);
+                }
+            }
+        } else {
+            // If no aspectRatio in URL, ensure slider is at default (100 = no limit)
+            const aspectRatioSlider = document.getElementById('aspect-ratio-slider');
+            const aspectRatioValue = document.getElementById('aspect-ratio-value');
+            if (aspectRatioSlider && aspectRatioValue && aspectRatioSlider.value !== '100') {
+                aspectRatioSlider.value = 100;
+                maxAspectRatio = null;
+                aspectRatioValue.textContent = 'No Limit';
+            }
+        }
+    } finally {
+        isUpdatingAspectRatioFromHash = false;
     }
     
     // Try exact namespace match first (handles nested namespaces like "Models/Ingredients")
@@ -360,6 +438,7 @@ function navigateFromHash() {
 function loadData() {
     currentData = COVERAGE_DATA;
     initializeDepthControl();
+    initializeAspectRatioControl();
     navigateFromHash();
 }
 
@@ -371,6 +450,87 @@ function loadData() {
  */
 function getDepthLabel(depth, view = 'namespaces') {
     return `Depth ${depth}`;
+}
+
+/**
+ * Convert slider position (1-99) to logarithmic aspect ratio.
+ * Slider 1 → aspect ratio 1, Slider 99 → aspect ratio 1000
+ * Uses logarithmic scale: aspectRatio = 10^((sliderValue - 1) / 98 * 3)
+ *
+ * @param {number} sliderValue - Slider position (1-99)
+ * @returns {number} Aspect ratio value
+ */
+function sliderToAspectRatio(sliderValue) {
+    if (sliderValue <= 1) {
+        return 1;
+    }
+    if (sliderValue >= 99) {
+        return 1000;
+    }
+    // Logarithmic scale: 1 to 1000 (10^0 to 10^3)
+    return Math.pow(10, ((sliderValue - 1) / 98) * 3);
+}
+
+/**
+ * Convert aspect ratio to slider position (for display purposes).
+ * Inverse of sliderToAspectRatio.
+ *
+ * @param {number} aspectRatio - Aspect ratio value
+ * @returns {number} Slider position (1-99)
+ */
+function aspectRatioToSlider(aspectRatio) {
+    if (aspectRatio <= 1) {
+        return 1;
+    }
+    if (aspectRatio >= 1000) {
+        return 99;
+    }
+    // Inverse of logarithmic scale
+    return 1 + (Math.log10(aspectRatio) / 3) * 98;
+}
+
+/**
+ * Initialize the aspect ratio control slider.
+ */
+function initializeAspectRatioControl() {
+    const aspectRatioControl = document.getElementById('aspect-ratio-control');
+    const aspectRatioSlider = document.getElementById('aspect-ratio-slider');
+    const aspectRatioValue = document.getElementById('aspect-ratio-value');
+    
+    if (aspectRatioControl && aspectRatioSlider && aspectRatioValue) {
+        // Set initial value (100 = no limit)
+        aspectRatioSlider.setAttribute('value', 100);
+        maxAspectRatio = null; // null means no limit
+        aspectRatioValue.textContent = 'No Limit';
+        
+        // Add event listener for slider changes
+        aspectRatioSlider.addEventListener('input', (e) => {
+            // Skip if we're updating from hash to avoid event loop
+            if (isUpdatingAspectRatioFromHash) {
+                return;
+            }
+            
+            const sliderValue = parseInt(e.target.value, 10);
+            if (sliderValue >= 100) {
+                maxAspectRatio = null; // No limit
+                aspectRatioValue.textContent = 'No Limit';
+            } else {
+                // Convert slider position to logarithmic aspect ratio
+                const aspectRatio = sliderToAspectRatio(sliderValue);
+                maxAspectRatio = aspectRatio;
+                // Display with 1 decimal place for precision
+                aspectRatioValue.textContent = aspectRatio >= 10 ? 
+                    Math.round(aspectRatio).toString() : 
+                    aspectRatio.toFixed(1);
+            }
+            
+            // Update hash with new aspect ratio (but don't trigger navigation)
+            updateHash(null, null, null, sliderValue);
+            
+            // Re-render current view with new aspect ratio limit
+            rerenderCurrentView();
+        });
+    }
 }
 
 /**
@@ -913,7 +1073,7 @@ function renderNamespaces(skipHashUpdate = false) {
         }));
     }
 
-    const layout = generateTreemap(nodes, width, height);
+    const layout = generateTreemap(nodes, width, height, maxAspectRatio);
     svg.innerHTML = '';
     
     // Set SVG viewBox to match the coordinate system
@@ -1038,7 +1198,8 @@ function renderNamespaces(skipHashUpdate = false) {
             const childLayout = generateTreemap(
                 node.children, 
                 node.w - (padding * 2), 
-                node.h - (padding * 2)
+                node.h - (padding * 2),
+                maxAspectRatio
             );
             
             // Render each child node, offset by the parent's position and padding
@@ -1253,7 +1414,7 @@ function renderFiles(namespaceName, files, skipHashUpdate = false) {
         return;
     }
 
-    const layout = generateTreemap(allNodes, width, height);
+    const layout = generateTreemap(allNodes, width, height, maxAspectRatio);
     svg.innerHTML = '';
     
     // Set SVG viewBox to match the coordinate system
@@ -1374,7 +1535,8 @@ function renderFiles(namespaceName, files, skipHashUpdate = false) {
             const childLayout = generateTreemap(
                 node.children, 
                 node.w - (padding * 2), 
-                node.h - (padding * 2)
+                node.h - (padding * 2),
+                maxAspectRatio
             );
             
             childLayout.forEach(childLayoutNode => {
@@ -1503,7 +1665,7 @@ function renderMethods(fileName, methods, skipHashUpdate = false) {
         tests: method.tests || [],
     }));
 
-    const layout = generateTreemap(nodes, width, height);
+    const layout = generateTreemap(nodes, width, height, maxAspectRatio);
     
     // If no layout generated, show a message
     if (layout.length === 0) {

@@ -292,14 +292,125 @@ function normalizeWeights(nodes, totalArea) {
 }
 
 /**
+ * Calculate the aspect ratio of a rectangle.
+ * Aspect ratio is max(width/height, height/width), so it's always >= 1.
+ *
+ * @param {number} w - Width
+ * @param {number} h - Height
+ * @returns {number} Aspect ratio (>= 1)
+ */
+function calculateAspectRatio(w, h) {
+    if (w <= 0 || h <= 0) {
+        return Infinity;
+    }
+    return Math.max(w / h, h / w);
+}
+
+/**
  * Generate treemap layout for nodes using the squarified algorithm.
+ *
+ * @param {Array} nodes - Array of nodes with weight property
+ * @param {number} width - Container width
+ * @param {number} height - Container height
+ * @param {number|null} maxAspectRatio - Maximum allowed aspect ratio (null = no limit)
+ * @returns {Array} Layout rectangles with x, y, w, h properties
+ */
+function generateTreemap(nodes, width, height, maxAspectRatio = null) {
+    if (nodes.length === 0 || width <= 0 || height <= 0 || !isFinite(width) || !isFinite(height)) {
+        return [];
+    }
+
+    // If no aspect ratio limit, run once and return
+    if (maxAspectRatio === null) {
+        return generateTreemapOnce(nodes, width, height);
+    }
+
+    // Store original weights for adjustment
+    const originalNodes = nodes.map(node => ({ ...node, originalWeight: node.weight }));
+    let adjustedNodes = originalNodes.map(node => ({ ...node, weight: node.weight }));
+    
+    const maxIterations = 100; // Prevent infinite loops
+    let iterations = 0;
+    
+    while (iterations < maxIterations) {
+        const layout = generateTreemapOnce(adjustedNodes, width, height);
+        
+        if (layout.length === 0) {
+            break; // Can't generate layout
+        }
+        
+        // Find the smallest item (or second item if sorted.length === 2, the smaller item)
+        let targetItem = null;
+        let targetIndex = -1;
+        
+        if (layout.length === 2) {
+            // For 2 items, check the smaller one (second item)
+            const sortedLayout = [...layout].sort((a, b) => (a.w * a.h) - (b.w * b.h));
+            targetItem = sortedLayout[0]; // The smaller one
+            // Find the index in adjustedNodes - try multiple matching strategies
+            targetIndex = adjustedNodes.findIndex(n => 
+                (n.id && targetItem.id && n.id === targetItem.id) ||
+                (n.fullName && targetItem.fullName && n.fullName === targetItem.fullName) ||
+                (n.name && targetItem.name && n.name === targetItem.name)
+            );
+        } else if (layout.length > 0) {
+            // For more than 2 items, find the smallest
+            const sortedLayout = [...layout].sort((a, b) => (a.w * a.h) - (b.w * b.h));
+            targetItem = sortedLayout[0]; // The smallest
+            // Find the index in adjustedNodes - try multiple matching strategies
+            targetIndex = adjustedNodes.findIndex(n => 
+                (n.id && targetItem.id && n.id === targetItem.id) ||
+                (n.fullName && targetItem.fullName && n.fullName === targetItem.fullName) ||
+                (n.name && targetItem.name && n.name === targetItem.name)
+            );
+        }
+        
+        if (!targetItem || targetIndex === -1) {
+            break; // Can't find target item
+        }
+        
+        // Calculate aspect ratio of the target item
+        const aspectRatio = calculateAspectRatio(targetItem.w, targetItem.h);
+        
+        // If aspect ratio is within limit, we're done
+        if (aspectRatio <= maxAspectRatio) {
+            return layout;
+        }
+        
+        // Adjust the weight of the target item
+        // Increase weight to make it larger (which should improve aspect ratio)
+        // Calculate how much we need to increase based on how far over the limit we are
+        const currentWeight = adjustedNodes[targetIndex].weight;
+        const originalWeight = adjustedNodes[targetIndex].originalWeight;
+        
+        // Calculate how much over the limit we are (as a ratio)
+        const excessRatio = aspectRatio / maxAspectRatio;
+        
+        // Increase weight proportionally to how far over the limit we are
+        // More aggressive adjustment when further over the limit
+        const adjustmentFactor = Math.min(excessRatio * 0.2, 2.0); // Cap at 2x per iteration
+        const weightIncrease = originalWeight * adjustmentFactor;
+        const newWeight = Math.min(currentWeight + weightIncrease, originalWeight * 20); // Cap at 20x original
+        
+        adjustedNodes[targetIndex].weight = newWeight;
+        
+        iterations++;
+    }
+    
+    // If we've exhausted iterations, return the last layout
+    return generateTreemapOnce(adjustedNodes, width, height);
+}
+
+/**
+ * Generate treemap layout once without aspect ratio adjustment.
+ * This is the core treemap generation logic.
  *
  * @param {Array} nodes - Array of nodes with weight property
  * @param {number} width - Container width
  * @param {number} height - Container height
  * @returns {Array} Layout rectangles with x, y, w, h properties
  */
-function generateTreemap(nodes, width, height) {
+function generateTreemapOnce(nodes, width, height) {
     if (nodes.length === 0 || width <= 0 || height <= 0 || !isFinite(width) || !isFinite(height)) {
         return [];
     }
