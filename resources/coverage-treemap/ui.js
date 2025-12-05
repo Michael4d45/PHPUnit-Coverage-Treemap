@@ -1193,27 +1193,60 @@ function renderNamespaces(skipHashUpdate = false) {
         // If this node has children, render them nested inside this rectangle
         if (node.children && node.children.length > 0) {
             // Create a nested treemap for the children within this parent's rectangle
-            // Use a small padding to make the nesting visible
+            // Use padding to make the nesting visible and space for header
             const padding = 2;
-            const childLayout = generateTreemap(
-                node.children, 
-                node.w - (padding * 2), 
-                node.h - (padding * 2),
-                maxAspectRatio
-            );
+            const headerHeight = 18; // Height for header text
+            const availableHeight = node.h - (padding * 2) - headerHeight;
+            const availableWidth = node.w - (padding * 2);
             
-            // Render each child node, offset by the parent's position and padding
-            childLayout.forEach(childLayoutNode => {
-                // Get the original child node to preserve its children
-                const originalChild = nodeMap.get(childLayoutNode.id) || childLayoutNode;
-                const childWithOffset = {
-                    ...childLayoutNode,
-                    children: originalChild.children,
-                    x: node.x + childLayoutNode.x + padding,
-                    y: node.y + childLayoutNode.y + padding,
-                };
-                renderNodeWithChildren(childWithOffset, parentSvg);
-            });
+            // Only render nested content if there's enough space
+            if (availableHeight > 10 && availableWidth > 10) {
+                // Add header text showing what's nested
+                const headerText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                headerText.setAttribute('x', node.x + padding);
+                headerText.setAttribute('y', node.y + padding + 12);
+                headerText.setAttribute('fill', '#fff');
+                headerText.setAttribute('font-size', '11px');
+                headerText.setAttribute('font-weight', 'bold');
+                headerText.setAttribute('text-anchor', 'start');
+                headerText.setAttribute('dominant-baseline', 'middle');
+                
+                // Determine what type of children we have
+                const firstChild = node.children[0];
+                let headerLabel = displayName || node.name;
+                if (firstChild) {
+                    if (firstChild.type === 'namespace') {
+                        headerLabel = `${headerLabel} → Namespaces`;
+                    } else if (firstChild.type === 'file') {
+                        headerLabel = `${headerLabel} → Files`;
+                    } else if (firstChild.type === 'method') {
+                        headerLabel = `${headerLabel} → Methods`;
+                    }
+                }
+                headerText.textContent = headerLabel;
+                parentSvg.appendChild(headerText);
+                
+                // Generate layout for children in the remaining space
+                const childLayout = generateTreemap(
+                    node.children, 
+                    availableWidth, 
+                    availableHeight,
+                    maxAspectRatio
+                );
+                
+                // Render each child node, offset by the parent's position, padding, and header
+                childLayout.forEach(childLayoutNode => {
+                    // Get the original child node to preserve its children
+                    const originalChild = nodeMap.get(childLayoutNode.id) || childLayoutNode;
+                    const childWithOffset = {
+                        ...childLayoutNode,
+                        children: originalChild.children,
+                        x: node.x + childLayoutNode.x + padding,
+                        y: node.y + childLayoutNode.y + padding + headerHeight,
+                    };
+                    renderNodeWithChildren(childWithOffset, parentSvg);
+                });
+            }
         } else {
             // Only show text label if node has no children (to avoid clutter)
             if (node.w > 100 && node.h > 30) {
@@ -1531,24 +1564,59 @@ function renderFiles(namespaceName, files, skipHashUpdate = false) {
 
         // If this node has children, render them nested inside this rectangle
         if (node.children && node.children.length > 0) {
+            // Use padding to make the nesting visible and space for header
             const padding = 2;
-            const childLayout = generateTreemap(
-                node.children, 
-                node.w - (padding * 2), 
-                node.h - (padding * 2),
-                maxAspectRatio
-            );
+            const headerHeight = 18; // Height for header text
+            const availableHeight = node.h - (padding * 2) - headerHeight;
+            const availableWidth = node.w - (padding * 2);
             
-            childLayout.forEach(childLayoutNode => {
-                const originalChild = nodeMap.get(childLayoutNode.id) || childLayoutNode;
-                const childWithOffset = {
-                    ...childLayoutNode,
-                    children: originalChild.children,
-                    x: node.x + childLayoutNode.x + padding,
-                    y: node.y + childLayoutNode.y + padding,
-                };
-                renderNodeWithChildren(childWithOffset, parentSvg);
-            });
+            // Only render nested content if there's enough space
+            if (availableHeight > 10 && availableWidth > 10) {
+                // Add header text showing what's nested
+                const headerText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                headerText.setAttribute('x', node.x + padding);
+                headerText.setAttribute('y', node.y + padding + 12);
+                headerText.setAttribute('fill', '#fff');
+                headerText.setAttribute('font-size', '11px');
+                headerText.setAttribute('font-weight', 'bold');
+                headerText.setAttribute('text-anchor', 'start');
+                headerText.setAttribute('dominant-baseline', 'middle');
+                
+                // Determine what type of children we have
+                const firstChild = node.children[0];
+                let headerLabel = displayName || node.name;
+                if (firstChild) {
+                    if (firstChild.type === 'namespace') {
+                        headerLabel = `${headerLabel} → Namespaces`;
+                    } else if (firstChild.type === 'file') {
+                        headerLabel = `${headerLabel} → Files`;
+                    } else if (firstChild.type === 'method') {
+                        headerLabel = `${headerLabel} → Methods`;
+                    }
+                }
+                headerText.textContent = headerLabel;
+                parentSvg.appendChild(headerText);
+                
+                // Generate layout for children in the remaining space
+                const childLayout = generateTreemap(
+                    node.children, 
+                    availableWidth, 
+                    availableHeight,
+                    maxAspectRatio
+                );
+                
+                // Render each child node, offset by the parent's position, padding, and header
+                childLayout.forEach(childLayoutNode => {
+                    const originalChild = nodeMap.get(childLayoutNode.id) || childLayoutNode;
+                    const childWithOffset = {
+                        ...childLayoutNode,
+                        children: originalChild.children,
+                        x: node.x + childLayoutNode.x + padding,
+                        y: node.y + childLayoutNode.y + padding + headerHeight,
+                    };
+                    renderNodeWithChildren(childWithOffset, parentSvg);
+                });
+            }
         } else {
             // Only show text label if node has no children
             if (node.w > 50 && node.h > 20) {
