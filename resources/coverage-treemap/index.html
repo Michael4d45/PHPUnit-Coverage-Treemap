@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coverage Treemap</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f3f4f6;
+            color: #1f2937;
+        }
+
+        .container {
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+
+        #stats {
+            font-size: 16px;
+            color: #6b7280;
+        }
+
+        #breadcrumb {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #6b7280;
+        }
+
+        #treemap-container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        #treemap-svg {
+            width: 100%;
+            height: 600px;
+            border: 1px solid #e5e7eb;
+            border-radius: 4px;
+        }
+
+        .treemap-rect {
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .treemap-rect:hover {
+            opacity: 0.8;
+            stroke-width: 2;
+        }
+
+        #tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            pointer-events: none;
+            display: none;
+            z-index: 1000;
+        }
+
+        #method-details {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            display: none;
+        }
+
+        #method-details h3 {
+            margin-bottom: 10px;
+            font-size: 18px;
+        }
+
+        #method-details h4 {
+            margin-top: 15px;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        #method-details ul {
+            list-style-position: inside;
+            margin-left: 10px;
+        }
+
+        #method-details li {
+            margin: 5px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+
+        #depth-control {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        #depth-control label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 14px;
+            color: #6b7280;
+        }
+
+        #depth-slider {
+            flex: 1;
+            max-width: 300px;
+            height: 6px;
+            border-radius: 3px;
+            background: #e5e7eb;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        #depth-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+        }
+
+        #depth-slider::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+            border: none;
+        }
+
+        #depth-value {
+            min-width: 40px;
+            font-weight: 600;
+            color: #1f2937;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Code Coverage Treemap</h1>
+            <div id="stats">Loading...</div>
+            <div id="breadcrumb"></div>
+            <div id="depth-control" style="display: none;">
+                <label>
+                    <span>View Level:</span>
+                    <input type="range" id="depth-slider" min="0" max="1" value="0" step="1">
+                    <span id="depth-value">Top Level Only</span>
+                </label>
+            </div>
+        </header>
+
+        <div id="treemap-container">
+            <svg id="treemap-svg"></svg>
+        </div>
+
+        <div id="method-details"></div>
+    </div>
+
+    <div id="tooltip"></div>
+
+    <script type="module" src="ui.js"></script>
+</body>
+</html>
+
